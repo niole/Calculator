@@ -1,5 +1,4 @@
 object Calculator {
-
   abstract class Expression {
     def calculate: Int = this match {
       case Number(n) => n
@@ -19,14 +18,13 @@ object Calculator {
 }
 
 object Test {
+  import Calculator._
   def run: Unit = {
-    val c = Calculator
     val exp = "1 + 2 * 3"
-    c.Number(2)
-    println(c.Add(c.Number(2), c.Number(2)).calculate == 4)
-    println(c.Add(c.Multiply(c.Number(2), c.Number(2)), c.Number(2)).calculate == 6)
-    println(c.Subtract(c.Multiply(c.Number(2), c.Number(2)), c.Number(2)).calculate == 2)
-    println(c.Divide(c.Multiply(c.Number(2), c.Number(2)), c.Number(2)).calculate == 2)
+    println(Add(Number(2), Number(2)).calculate == 4)
+    println(Add(Multiply(Number(2), Number(2)), Number(2)).calculate == 6)
+    println(Subtract(Multiply(Number(2), Number(2)), Number(2)).calculate == 2)
+    println(Divide(Multiply(Number(2), Number(2)), Number(2)).calculate == 2)
   }
 }
 
