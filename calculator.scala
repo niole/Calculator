@@ -1,8 +1,12 @@
 object Calculator {
-  type Unparsed = List[String]
+  //type Unparsed = List[String]
+  type Unparsed = List[Token]
   type Parsed = (Unparsed, Expression)
 
-  abstract class Expression {
+  class Expression {
+
+    def number(n: String): Expression = Number(n.toInt)
+
     def calculate: Int = this match {
       case Number(n) => n
       case Multiply(l, r) => l.calculate * r.calculate
@@ -20,7 +24,29 @@ object Calculator {
     }
   }
 
-  def tokenize(input: String): Unparsed = input.split(" ").toList
+  def getAgg(op: String): (Expression, Expression) => Expression = op match {
+    case "+" => (x: Expression, y: Expression) => Add(x,y)
+    case "-" => (x: Expression, y: Expression) => Subtract(x,y)
+    case "*" => (x: Expression, y: Expression) => Multiply(x,y)
+    case "/" => (x: Expression, y: Expression) => Divide(x,y)
+  }
+
+  def run(input: String): Expression = {
+    val tokens = tokenize(input.split(" ").toList)
+    AS.parse(tokens.tail, tokens.head.value)(getAgg(tokens.head.nextOp))._2
+  }
+
+  def tokenize(input: List[String]): Unparsed = input match {
+    case Nil => Nil
+    case n :: rest =>
+      if (rest.isEmpty) List(Token("", Number(n.toInt)))
+      else rest match {
+        case "+" :: tail => new Token("+", Number(n.toInt)) :: tokenize(tail)
+        case "-" :: tail => new Token("-", Number(n.toInt)) :: tokenize(tail)
+        case "*" :: tail => new Token("*", Number(n.toInt)) :: tokenize(tail)
+        case "/" :: tail => new Token("/", Number(n.toInt)) :: tokenize(tail)
+      }
+  }
 
   case class Number(n: Int) extends Expression
   case class Add(l: Expression, r: Expression) extends Expression
@@ -28,85 +54,35 @@ object Calculator {
   case class Multiply(l: Expression, r: Expression) extends Expression
   case class Divide(l: Expression, r: Expression) extends Expression
 
-  object Number {
-    def parse(input: Unparsed): Parsed = (input.tail, Number(input.head.toInt))
-  }
+  case class Token(nextOp: String, value: Expression)
 
-  object Multiply {
-    def parse(input: Unparsed): Parsed = input match {
-      case Nil => (Nil, Number(1))
-      case left :: rest =>
-        if (!rest.isEmpty) rest match {
-          case operator :: tail => operator match {
-            case "*" =>
-              val (unparsed, parsed) = Multiply.parse(tail)
-              (unparsed, Multiply(Number(left.toInt), parsed))
-
-            case "/" =>
-              val (unparsed, parsed) = Multiply.parse(tail)
-              (unparsed, Divide(Number(left.toInt), parsed))
-
-            case _ => (rest, Number(left.toInt))
-          }
-        }
-        else Number.parse(input)
+  object AS extends Expression {
+    def parse(unparsed: Unparsed, acc: Expression)(aggregator: (Expression, Expression) => Expression): Parsed = unparsed match {
+      case Nil => (Nil, acc)
+      case right :: rest => right.nextOp match {
+        case "+" => AS.parse(rest, aggregator(acc, right.value))(getAgg("+"))
+        case "-" => AS.parse(rest, aggregator(acc, right.value))(getAgg("-"))
+        case "*" =>
+          val (next, accedMDExpr) = MD.parse(rest, right.value)(getAgg("*"))
+          if (next.isEmpty) (Nil, aggregator(acc, accedMDExpr))
+          else AS.parse(next.tail, aggregator(acc, accedMDExpr))(getAgg(next.head.nextOp))
+        case "/" =>
+          val (next, accedDivExp) = MD.parse(rest, right.value)(getAgg("/"))
+          if (next.isEmpty) (Nil, aggregator(acc, accedDivExp))
+          else AS.parse(next.tail, aggregator(acc, accedDivExp))(getAgg(next.head.nextOp))
+        case "" => (Nil, aggregator(acc, right.value))
+      }
     }
   }
 
-  object Subtract {
-    def parse(input: Unparsed, agg: Expression): Parsed = input match {
-      case Nil => (Nil, agg)
-      case left :: rest =>
-        if (!rest.isEmpty) rest match {
-          case operator :: tail => operator match {
-            case "+" => Add.parse(tail, Subtract(agg, Number(left.toInt)))
-
-            case "-" => Subtract.parse(tail, Subtract(agg, Number(left.toInt)))
-
-            case _ =>
-              val (unparsed, parsed) = Multiply.parse(input)
-              val aggregated = Add(parsed, agg)
-
-              if (unparsed.isEmpty) (Nil, aggregated)
-              else {
-                val op = unparsed.head
-                if (op == "+") Add.parse("0" :: unparsed, aggregated)
-                else Subtract.parse("0" :: unparsed, aggregated)
-              }
-          }
-        }
-        else {
-          val (unparsed, parsed) = Number.parse(input)
-          (unparsed, Subtract(agg, parsed))
-        }
-    }
-  }
-
-  object Add {
-    def parse(input: Unparsed, agg: Expression): Parsed = input match {
-      case Nil => (Nil, agg)
-      case left :: rest =>
-        if (!rest.isEmpty) rest match {
-          case operator :: tail => operator match {
-            case "+" => Add.parse(tail, Add(agg, Number(left.toInt)))
-
-            case "-" => Subtract.parse(tail, Add(agg, Number(left.toInt)))
-
-            case _ =>
-              val (unparsed, parsed) = Multiply.parse(input)
-              val aggregated = Add(parsed, agg)
-
-              if (unparsed.isEmpty) (Nil, aggregated)
-              else {
-                val op = unparsed.head
-                if (op == "+") Add.parse("0" :: unparsed, aggregated)
-                else Subtract.parse("0" :: unparsed, aggregated)
-              }
-          }
-        }
-        else {
-          val (unparsed, parsed) = Number.parse(input)
-          (unparsed, Add(agg, parsed))
+  object MD extends Expression {
+    def parse(unparsed: Unparsed, acc: Expression)(aggregator: (Expression, Expression) => Expression): Parsed = unparsed match {
+        case Nil => (Nil, acc)
+        case right :: rest => right.nextOp match {
+          case "*" => MD.parse(rest, aggregator(acc, right.value))(getAgg("*"))
+          case "/" => MD.parse(rest, aggregator(acc, right.value))(getAgg("/"))
+          case "" => (Nil, aggregator(acc, right.value))
+          case _ => (unparsed, aggregator(acc, right.value))
         }
     }
   }
@@ -115,52 +91,25 @@ object Calculator {
 object Test {
   import Calculator._
   def run: Unit = {
-    val shouldBe11 = "1 + 2 * 3 + 4"
-    val _11s = tokenize(shouldBe11)
-    val _11exp = Add.parse(_11s, Number(0))._2
-    val _11 = _11exp.calculate
-    println(shouldBe11)
-    println(_11 == 11)
-    println(_11exp.print)
+    val e1 = "1 + 2"
+    val _1 = Calculator.run(e1)
+    println(_1.calculate == 3)
 
-    val shouldBe7 = "1 + 2 * 3"
-    val _7s = tokenize(shouldBe7)
-    val _7exp = Add.parse(_7s, Number(0))._2
-    val _7 = _7exp.calculate
-    println(shouldBe7)
-    println(_7 == 7)
-    println(_7exp.print)
+    val e2 = "1 * 2"
+    val _2 = Calculator.run(e2)
+    println(_2.calculate == 2)
 
-    val shouldBe6 = "0 * 1 + 2 * 3"
-    val _6s = tokenize(shouldBe6)
-    val _6exp = Add.parse(_6s, Number(0))._2
-    val _6 = _6exp.calculate
-    println(shouldBe6)
-    println(_6 == 6)
-    println(_6exp.print)
+    val e3 = "4 / 2"
+    val _3 = Calculator.run(e3)
+    println(_3.calculate == 2)
 
-    val shouldBe5 = "6 / 2 + 2 - 0"
-    val _5s = tokenize(shouldBe5)
-    val exp = Add.parse(_5s, Number(0))._2
-    val _5 = exp.calculate
-    println(shouldBe5)
-    println(_5 == 5)
-    println(exp.print)
+    val e4 = "14 - 2"
+    val _4 = Calculator.run(e4)
+    println(_4.calculate == 12)
 
-    val shouldBeneg6 = "0 * 1 - 2 * 3"
-    val _neg6s = tokenize(shouldBeneg6)
-    val _negexp6s = Add.parse(_neg6s, Number(0))._2
-    val _neg6 = _negexp6s.calculate
-    println(shouldBeneg6)
-    println(_neg6 == -6)
-    println(_neg6)
-    println(_negexp6s.print)
-
-
-    println(Add(Number(2), Number(2)).calculate == 4)
-    println(Add(Multiply(Number(2), Number(2)), Number(2)).calculate == 6)
-    println(Subtract(Multiply(Number(2), Number(2)), Number(2)).calculate == 2)
-    println(Divide(Multiply(Number(2), Number(2)), Number(2)).calculate == 2)
+    val e5 = "4 - 2 * 5 + 2 / 2"
+    val _5 = Calculator.run(e5)
+    println(_5.calculate == -5)
   }
 }
 
