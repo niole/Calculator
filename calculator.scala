@@ -1,12 +1,37 @@
 object Calculator {
-  //type Unparsed = List[String]
   type Unparsed = List[Token]
   type Parsed = (Unparsed, Expression)
 
+
+  def getAgg(op: String): (Expression, Expression) => Expression = op match {
+    case "+" => (x: Expression, y: Expression) => Add(x,y)
+    case "-" => (x: Expression, y: Expression) => Subtract(x,y)
+    case "*" => (x: Expression, y: Expression) => Multiply(x,y)
+    case "/" => (x: Expression, y: Expression) => Divide(x,y)
+  }
+
+  def run(input: String): Expression = {
+    val tokens = Tokenizer.tokenize(input.split(" ").toList)
+    AS.parse(tokens.tail, tokens.head.value)(getAgg(tokens.head.nextOp))._2
+  }
+
+  case class Token(nextOp: String, value: Expression)
+
+  object Tokenizer {
+    def tokenize(input: List[String]): Unparsed = input match {
+      case Nil => Nil
+      case n :: rest => rest match {
+        case Nil => List(Token("", Number(n.toInt)))
+        case "+" :: tail => new Token("+", Number(n.toInt)) :: tokenize(tail)
+        case "-" :: tail => new Token("-", Number(n.toInt)) :: tokenize(tail)
+        case "*" :: tail => new Token("*", Number(n.toInt)) :: tokenize(tail)
+        case "/" :: tail => new Token("/", Number(n.toInt)) :: tokenize(tail)
+        case _ => List(Token("", Number(n.toInt)))
+      }
+    }
+  }
+
   class Expression {
-
-    def number(n: String): Expression = Number(n.toInt)
-
     def calculate: Int = this match {
       case Number(n) => n
       case Multiply(l, r) => l.calculate * r.calculate
@@ -24,37 +49,11 @@ object Calculator {
     }
   }
 
-  def getAgg(op: String): (Expression, Expression) => Expression = op match {
-    case "+" => (x: Expression, y: Expression) => Add(x,y)
-    case "-" => (x: Expression, y: Expression) => Subtract(x,y)
-    case "*" => (x: Expression, y: Expression) => Multiply(x,y)
-    case "/" => (x: Expression, y: Expression) => Divide(x,y)
-  }
-
-  def run(input: String): Expression = {
-    val tokens = tokenize(input.split(" ").toList)
-    AS.parse(tokens.tail, tokens.head.value)(getAgg(tokens.head.nextOp))._2
-  }
-
-  def tokenize(input: List[String]): Unparsed = input match {
-    case Nil => Nil
-    case n :: rest =>
-      if (rest.isEmpty) List(Token("", Number(n.toInt)))
-      else rest match {
-        case "+" :: tail => new Token("+", Number(n.toInt)) :: tokenize(tail)
-        case "-" :: tail => new Token("-", Number(n.toInt)) :: tokenize(tail)
-        case "*" :: tail => new Token("*", Number(n.toInt)) :: tokenize(tail)
-        case "/" :: tail => new Token("/", Number(n.toInt)) :: tokenize(tail)
-      }
-  }
-
   case class Number(n: Int) extends Expression
   case class Add(l: Expression, r: Expression) extends Expression
   case class Subtract(l: Expression, r: Expression) extends Expression
   case class Multiply(l: Expression, r: Expression) extends Expression
   case class Divide(l: Expression, r: Expression) extends Expression
-
-  case class Token(nextOp: String, value: Expression)
 
   object AS extends Expression {
     def parse(unparsed: Unparsed, acc: Expression)(aggregator: (Expression, Expression) => Expression): Parsed = unparsed match {
